@@ -274,7 +274,7 @@
 
   <header class="board">
     <h1>BAND FAM CAM</h1>
-    <p>Share your fav band FAM memories + find pics for InnerView!!</p>
+    <p>Share your fav band FAM moments + find pics for InnerView</p>
   </header>
 
   <div class="tabs">
@@ -322,12 +322,238 @@
   </footer>
 </div>
 
+<!-- PASSWORD GATE (its own script so nothing else can break it).
+     Note: this is a friction layer, not real security -- the password is
+     visible in this file's source. -->
+<script>
+(function () {
+  var GATE_PASSWORD = 'bandfam';
+  var gate = document.getElementById('password-gate');
+  var mainContent = document.getElementById('main-content');
+  var input = document.getElementById('gatePasswordInput');
+  var errorEl = document.getElementById('gateError');
+
+  function unlock() {
+    gate.style.display = 'none';
+    mainContent.style.display = 'block';
+  }
+
+  function tryUnlock() {
+    var entered = input.value.trim().toLowerCase();
+    if (entered === GATE_PASSWORD) {
+      errorEl.classList.remove('show');
+      // Some browsers block storage; never let that stop the unlock.
+      try { sessionStorage.setItem('bandfamcam_unlocked', 'true'); } catch (e) {}
+      unlock();
+    } else {
+      errorEl.classList.add('show');
+      input.select();
+    }
+  }
+
+  document.getElementById('gateSubmitBtn').addEventListener('click', tryUnlock);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); tryUnlock(); }
+  });
+
+  try {
+    if (sessionStorage.getItem('bandfamcam_unlocked') === 'true') unlock();
+  } catch (e) {}
+})();
+</script>
+
 <script>
   // ------------- CONFIG -------------
   // Paste the Web App URL you get from deploying Code.gs here:
   const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby1tmX3HX4LTJkqs-DzH_l__bTTrpP6SkLtE5L5XFPctf-6_GF-unErl2KbNpeIG20C/exec";
   const MAX_DIMENSION = 1400; // resize photos before upload
 
-  // ------------- PASSWORD GATE -------------
-  // Heads up: this is just a friction layer, not real security — the password
-  // lives in this file's
+  // ------------- TABS -------------
+  function switchTab(name) {
+    const upload = name === 'upload';
+    document.getElementById('upload-panel').style.display = upload ? 'block' : 'none';
+    document.getElementById('search-panel').style.display = upload ? 'none' : 'block';
+    document.getElementById('tab-upload-btn').classList.toggle('active', upload);
+    document.getElementById('tab-search-btn').classList.toggle('active', !upload);
+    if (!upload) loadGallery();
+  }
+
+  // ------------- IMAGE COMPRESSION -------------
+  function compressImage(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Could not read image'));
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+            const scale = MAX_DIMENSION / Math.max(width, height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ------------- API HELPERS -------------
+  // POST uses text/plain to avoid a CORS preflight (Apps Script reads the raw body either way)
+  function postToScript(payload) {
+    return fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    }).then(r => r.json());
+  }
+  function getFromScript(params) {
+    const qs = new URLSearchParams(params).toString();
+    return fetch(`${APPS_SCRIPT_URL}?${qs}`).then(r => r.json());
+  }
+
+  // ------------- UPLOAD -------------
+  document.getElementById('upload-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const statusEl = document.getElementById('upload-status');
+    const btn = document.getElementById('upload-submit-btn');
+    const fileInput = document.getElementById('photoFile');
+    const file = fileInput.files[0];
+
+    if (APPS_SCRIPT_URL.includes('PASTE_YOUR')) {
+      showStatus(statusEl, 'This site isn\'t connected to the backend yet — paste the Apps Script URL into index.html.', false);
+      return;
+    }
+    if (!file) return;
+
+    btn.disabled = true;
+    btn.textContent = 'SENDING...';
+
+    try {
+      const dataUrl = await compressImage(file);
+      const result = await postToScript({
+        action: 'upload',
+        uploaderName: document.getElementById('uploaderName').value.trim(),
+        uploaderId: document.getElementById('uploaderId').value.trim(),
+        taggedNames: document.getElementById('taggedNames').value.trim(),
+        eventName: document.getElementById('eventName').value.trim(),
+        filename: file.name,
+        mimeType: 'image/jpeg',
+        photoBase64: dataUrl
+      });
+
+      if (result.success) {
+        showStatus(statusEl, 'Got it! Your photo is waiting for approval.', true);
+        e.target.reset();
+      } else {
+        showStatus(statusEl, 'Something went wrong: ' + (result.error || 'unknown error'), false);
+      }
+    } catch (err) {
+      showStatus(statusEl, 'Upload failed: ' + err.message, false);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'SEND IT IN';
+    }
+  });
+
+  function showStatus(el, msg, ok) {
+    el.textContent = msg;
+    el.className = 'status-msg show ' + (ok ? 'ok' : 'err');
+  }
+
+  // ------------- GALLERY / SEARCH -------------
+  let galleryLoadedOnce = false;
+
+  function loadGallery() {
+    if (galleryLoadedOnce) return;
+    galleryLoadedOnce = true;
+    fetchAndRender({ action: 'list' }, 'Showing all approved photos. Search a name or event to narrow it down.');
+  }
+
+  function performSearch() {
+    const query = document.getElementById('searchInput').value.trim();
+    if (!query) {
+      fetchAndRender({ action: 'list' }, 'Showing all approved photos. Search a name or event to narrow it down.');
+      return;
+    }
+    fetchAndRender({ action: 'search', query }, `Showing results for "${query}"`);
+  }
+
+  document.getElementById('searchInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); performSearch(); }
+  });
+
+  function fetchAndRender(params, hintText) {
+    const gallery = document.getElementById('gallery');
+    const hint = document.getElementById('search-hint');
+    hint.textContent = hintText;
+    gallery.innerHTML = '<p class="empty-msg">Loading...</p>';
+
+    if (APPS_SCRIPT_URL.includes('PASTE_YOUR')) {
+      gallery.innerHTML = '<p class="empty-msg">This site isn\'t connected to the backend yet.</p>';
+      return;
+    }
+
+    getFromScript(params).then(result => {
+      if (!result.success) {
+        gallery.innerHTML = '<p class="empty-msg">Could not load photos.</p>';
+        return;
+      }
+      renderPhotos(result.photos || []);
+    }).catch(() => {
+      gallery.innerHTML = '<p class="empty-msg">Could not load photos.</p>';
+    });
+  }
+
+  function renderPhotos(photos) {
+    const gallery = document.getElementById('gallery');
+    if (!photos.length) {
+      gallery.innerHTML = '<p class="empty-msg">No photos yet.</p>';
+      return;
+    }
+    gallery.innerHTML = '';
+    photos.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'polaroid';
+      card.innerHTML = `
+        <img src="${escapeHtml(p.imageUrl)}" alt="Band photo uploaded by ${escapeHtml(p.uploaderName)}" loading="lazy">
+        <div class="roster">
+          ${p.event ? `<span class="who">Event:</span> ${escapeHtml(p.event)}<br>` : ''}
+          <span class="who">Tagged:</span> ${escapeHtml(p.taggedNames) || '—'}<br>
+          <span class="who">Uploaded by:</span> ${escapeHtml(p.uploaderName)}
+        </div>
+        <button class="report-link" onclick="reportPhoto('${p.photoId}')">Report this photo</button>
+      `;
+      gallery.appendChild(card);
+    });
+  }
+
+  function reportPhoto(photoId) {
+    if (!confirm('Report this photo as inappropriate? It will be hidden until a moderator reviews it.')) return;
+    const reason = prompt('Optional: why are you reporting it?') || '';
+    postToScript({ action: 'report', photoId, reason }).then(result => {
+      if (result.success) {
+        alert('Thanks — it\'s been hidden pending review.');
+        galleryLoadedOnce = false;
+        loadGallery();
+      } else {
+        alert('Could not report that photo: ' + (result.error || 'unknown error'));
+      }
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+</script>
+</body>
+</html>
