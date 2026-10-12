@@ -37,7 +37,7 @@
 
   .wrap { max-width: 880px; margin: 0 auto; }
 
-  /* --- Scoreboard header --- */
+ 
   header.board {
     background: var(--deep-green);
     border: 6px solid var(--ink);
@@ -73,7 +73,7 @@
     margin: 4px 0 0;
   }
 
-  /* --- Tab buttons (arcade cabinet style) --- */
+ 
   .tabs {
     display: flex;
     gap: 14px;
@@ -115,7 +115,7 @@
   }
 
   label { display: block; font-size: 19px; margin: 14px 0 4px; color: var(--deep-brass); font-weight: bold; }
-  /* --- Password gate --- */
+  
   .gate-wrap {
     min-height: 70vh;
     display: flex;
@@ -183,7 +183,7 @@
   .search-row input { flex: 1; }
   .search-row .btn { margin-top: 0; }
 
-  /* --- Photo gallery: polaroid-style cards on a corkboard strip --- */
+  
   .gallery {
     margin-top: 22px;
     display: grid;
@@ -242,7 +242,7 @@
     margin-top: 6px;
     font-family: 'VT323', monospace;
   }
-  /* --- Enlarged photo (lightbox) --- */
+  
   .lightbox {
     display: none;
     position: fixed;
@@ -438,12 +438,11 @@
 </script>
 
 <script>
-  // ------------- CONFIG -------------
-  // Paste the Web App URL you get from deploying Code.gs here:
+ 
   const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzosylkqWsPeknvrU74dM8w8JYLdN4EROlv8bYQrfXn0qnh_5cs_vtyP5ifCxD7myqQ/exec";
   const MAX_DIMENSION = 1400; // resize photos before upload
 
-  // ------------- TABS -------------
+  
   function switchTab(name) {
     const upload = name === 'upload';
     document.getElementById('upload-panel').style.display = upload ? 'block' : 'none';
@@ -453,7 +452,7 @@
     if (!upload) loadGallery();
   }
 
-  // ------------- IMAGE COMPRESSION -------------
+  
   function compressImage(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -480,8 +479,7 @@
     });
   }
 
-  // ------------- API HELPERS -------------
-  // POST uses text/plain to avoid a CORS preflight (Apps Script reads the raw body either way)
+  
   function postToScript(payload) {
     return fetch(APPS_SCRIPT_URL, {
       method: 'POST',
@@ -494,7 +492,7 @@
     return fetch(`${APPS_SCRIPT_URL}?${qs}`).then(r => r.json());
   }
 
-  // ------------- UPLOAD -------------
+  
   document.getElementById('upload-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const statusEl = document.getElementById('upload-status');
@@ -543,7 +541,7 @@
     el.className = 'status-msg show ' + (ok ? 'ok' : 'err');
   }
 
-  // ------------- GALLERY / SEARCH -------------
+ 
   let galleryLoadedOnce = false;
 
   function loadGallery() {
@@ -613,7 +611,7 @@
       gallery.appendChild(card);
     });
   }
-    // ------------- ENLARGED PHOTO -------------
+  
   function openLightbox(p) {
     const lb = document.getElementById('lightbox');
     const img = document.getElementById('lightbox-img');
